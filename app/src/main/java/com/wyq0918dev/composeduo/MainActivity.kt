@@ -67,6 +67,10 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
+ * TODO: 双卡信号、电量数字显示
+ */
+
+/**
  * iPhone Duo 外屏「三合一」状态栏图标。
  *
  * 依据（联网核实）：
