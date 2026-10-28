@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -35,6 +36,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -187,18 +189,38 @@ fun DuoStatusMark(
         }
     }
 
+    // 环心内容类型 + 切换过渡（单 Canvas 内做淡入淡出）
+    val kind = when {
+        isCharging -> CenterKind.Charging
+        wifiLevel > 0 -> CenterKind.Wifi
+        else -> CenterKind.Label
+    }
+    var fromKind by remember { mutableStateOf(kind) }
+    var toKind by remember { mutableStateOf(kind) }
+    val crossfade = remember { Animatable(1f) }
+    LaunchedEffect(kind) {
+        if (toKind != kind) {
+            fromKind = toKind
+            toKind = kind
+            crossfade.snapTo(0f)
+            crossfade.animateTo(1f, tween(durationMillis = 320))
+        }
+    }
+
     Canvas(modifier = modifier.size(size)) {
         drawDuoMark(
             colors = c,
             accent = accent,
             level = animatedLevel,
-            isCharging = isCharging,
             boltColor = boltColor,
             isLow = isLow,
             pulse = pulse,
             wifiLevel = wifiLevel,
             bars = bars,
             label = labelLayout,
+            fromKind = fromKind,
+            toKind = toKind,
+            crossfade = crossfade.value,
         )
     }
 }
@@ -207,13 +229,15 @@ private fun DrawScope.drawDuoMark(
     colors: DuoStatusColors,
     accent: Color,
     level: Float,
-    isCharging: Boolean,
     boltColor: Color,
     isLow: Boolean,
     pulse: Float,
     wifiLevel: Int,
     bars: Int,
     label: TextLayoutResult?,
+    fromKind: CenterKind,
+    toKind: CenterKind,
+    crossfade: Float,
 ) {
     val s = size.minDimension
     val stroke = s * (3f / 46f) * DUO_STROKE_FACTOR
@@ -270,19 +294,37 @@ private fun DrawScope.drawDuoMark(
         )
     }
 
-    // 环心内容
-    when {
-        isCharging -> drawLightning(center, s, boltColor)
+    // 环心内容：from 淡出、to 淡入，切换时平滑过渡
+    drawCenterContent(fromKind, center, s, colors, boltColor, wifiLevel, label, 1f - crossfade)
+    drawCenterContent(toKind, center, s, colors, boltColor, wifiLevel, label, crossfade)
+}
 
-        wifiLevel > 0 -> drawWifi(center, s, colors.foreground, colors.track, wifiLevel)
-        label != null -> drawText(
-            textLayoutResult = label,
-            topLeft = Offset(center.x - label.size.width / 2f, center.y - label.size.height / 2f),
-        )
+private enum class CenterKind { Charging, Wifi, Label }
+
+private fun DrawScope.drawCenterContent(
+    kind: CenterKind,
+    center: Offset,
+    s: Float,
+    colors: DuoStatusColors,
+    boltColor: Color,
+    wifiLevel: Int,
+    label: TextLayoutResult?,
+    alpha: Float,
+) {
+    when (kind) {
+        CenterKind.Charging -> drawLightning(center, s, boltColor, alpha)
+        CenterKind.Wifi -> drawWifi(center, s, colors.foreground, colors.track, wifiLevel, alpha)
+        CenterKind.Label -> label?.let {
+            drawText(
+                textLayoutResult = it,
+                topLeft = Offset(center.x - it.size.width / 2f, center.y - it.size.height / 2f),
+                alpha = alpha,
+            )
+        }
     }
 }
 
-private fun DrawScope.drawLightning(center: Offset, s: Float, color: Color) {
+private fun DrawScope.drawLightning(center: Offset, s: Float, color: Color, alpha: Float) {
     val bolt = s * 0.46f
     val pts = listOf(
         Offset(0.62f, 0.00f),
@@ -299,11 +341,12 @@ private fun DrawScope.drawLightning(center: Offset, s: Float, color: Color) {
         if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
     }
     path.close()
-    drawPath(path, color)
+    drawPath(path, color, alpha = alpha)
     // 圆角描边柔化闪电的尖角，使其更圆润
     drawPath(
         path,
         color,
+        alpha = alpha,
         style = Stroke(
             width = s * 0.05f,
             cap = StrokeCap.Round,
@@ -317,7 +360,8 @@ private fun DrawScope.drawWifi(
     s: Float,
     color: Color,
     trackColor: Color,
-    level: Int
+    level: Int,
+    alpha: Float,
 ) {
     // 官方样式：圆角扇形（第 1 格）+ 2 条弧（第 2、3 格），同一圆心向上辐射
     // 弧线加粗、间距收紧，让三格视觉重量平衡（扇形径向厚度 ≈ 1.3 倍弧线宽）
@@ -344,6 +388,7 @@ private fun DrawScope.drawWifi(
             useCenter = false,
             topLeft = Offset(fan.x - r, fan.y - r),
             size = Size(r * 2f, r * 2f),
+            alpha = alpha,
             style = Stroke(width = iconStroke, cap = StrokeCap.Round),
         )
     }
@@ -355,6 +400,7 @@ private fun DrawScope.drawWifi(
         useCenter = true,
         topLeft = Offset(fan.x - wedgeRadius, fan.y - wedgeRadius),
         size = Size(wedgeRadius * 2f, wedgeRadius * 2f),
+        alpha = alpha,
     )
     drawArc(
         color = color,
@@ -363,6 +409,7 @@ private fun DrawScope.drawWifi(
         useCenter = true,
         topLeft = Offset(fan.x - wedgeRadius, fan.y - wedgeRadius),
         size = Size(wedgeRadius * 2f, wedgeRadius * 2f),
+        alpha = alpha,
         style = Stroke(width = cornerRound, cap = StrokeCap.Round, join = StrokeJoin.Round),
     )
 }
