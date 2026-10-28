@@ -292,6 +292,8 @@ private fun DrawScope.drawLightning(center: Offset, s: Float, color: Color, puls
     }
     path.close()
     drawPath(path, color)
+    // 圆角描边柔化闪电的尖角，使其更圆润
+    drawPath(path, color, style = Stroke(width = s * 0.05f, cap = StrokeCap.Round, join = StrokeJoin.Round))
 }
 
 private fun DrawScope.drawWifi(center: Offset, s: Float, color: Color, trackColor: Color, level: Int) {
