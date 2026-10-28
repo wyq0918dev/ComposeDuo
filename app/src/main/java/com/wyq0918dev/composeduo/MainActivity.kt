@@ -154,6 +154,11 @@ fun DuoStatusMark(
         },
         animationSpec = tween(durationMillis = 500),
     )
+    // 充电 / 快充闪电颜色平滑过渡
+    val boltColor by animateColorAsState(
+        targetValue = if (state.isFastCharging) c.fastCharging else c.foreground,
+        animationSpec = tween(durationMillis = 400),
+    )
     // 充电 / 低电量脉冲
     val infinite = rememberInfiniteTransition()
     val pulse by infinite.animateFloat(
@@ -188,7 +193,7 @@ fun DuoStatusMark(
             accent = accent,
             level = animatedLevel,
             isCharging = isCharging,
-            isFastCharging = state.isFastCharging,
+            boltColor = boltColor,
             isLow = isLow,
             pulse = pulse,
             wifiLevel = wifiLevel,
@@ -203,7 +208,7 @@ private fun DrawScope.drawDuoMark(
     accent: Color,
     level: Float,
     isCharging: Boolean,
-    isFastCharging: Boolean,
+    boltColor: Color,
     isLow: Boolean,
     pulse: Float,
     wifiLevel: Int,
@@ -258,13 +263,17 @@ private fun DrawScope.drawDuoMark(
         drawCircle(
             color = if (i < bars) colors.foreground else colors.track,
             radius = dotRadius,
-            center = Offset(center.x + dotOrbit * cos(a).toFloat(), center.y + dotOrbit * sin(a).toFloat()),
+            center = Offset(
+                center.x + dotOrbit * cos(a).toFloat(),
+                center.y + dotOrbit * sin(a).toFloat()
+            ),
         )
     }
 
     // 环心内容
     when {
-        isCharging -> drawLightning(center, s, if (isFastCharging) colors.fastCharging else colors.foreground, pulse)
+        isCharging -> drawLightning(center, s, boltColor)
+
         wifiLevel > 0 -> drawWifi(center, s, colors.foreground, colors.track, wifiLevel)
         label != null -> drawText(
             textLayoutResult = label,
@@ -273,9 +282,8 @@ private fun DrawScope.drawDuoMark(
     }
 }
 
-private fun DrawScope.drawLightning(center: Offset, s: Float, color: Color, pulse: Float) {
+private fun DrawScope.drawLightning(center: Offset, s: Float, color: Color) {
     val bolt = s * 0.46f
-    val scale = 0.82f + 0.18f * pulse
     val pts = listOf(
         Offset(0.62f, 0.00f),
         Offset(0.18f, 0.55f),
@@ -286,17 +294,31 @@ private fun DrawScope.drawLightning(center: Offset, s: Float, color: Color, puls
     )
     val path = Path()
     pts.forEachIndexed { i, p ->
-        val x = center.x + (p.x - 0.5f) * bolt * scale
-        val y = center.y + (p.y - 0.5f) * bolt * scale
+        val x = center.x + (p.x - 0.5f) * bolt
+        val y = center.y + (p.y - 0.5f) * bolt
         if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
     }
     path.close()
     drawPath(path, color)
     // 圆角描边柔化闪电的尖角，使其更圆润
-    drawPath(path, color, style = Stroke(width = s * 0.05f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    drawPath(
+        path,
+        color,
+        style = Stroke(
+            width = s * 0.05f,
+            cap = StrokeCap.Round,
+            join = StrokeJoin.Round,
+        )
+    )
 }
 
-private fun DrawScope.drawWifi(center: Offset, s: Float, color: Color, trackColor: Color, level: Int) {
+private fun DrawScope.drawWifi(
+    center: Offset,
+    s: Float,
+    color: Color,
+    trackColor: Color,
+    level: Int
+) {
     // 官方样式：圆角扇形（第 1 格）+ 2 条弧（第 2、3 格），同一圆心向上辐射
     // 弧线加粗、间距收紧，让三格视觉重量平衡（扇形径向厚度 ≈ 1.3 倍弧线宽）
     val iconStroke = s * (3f / 46f) * DUO_STROKE_FACTOR
@@ -372,7 +394,13 @@ private fun DuoDemo() {
 
     val samples = listOf(
         "充电" to DuoStatusState(0.80f, isCharging = true, wifiLevel = 3, cellularBars = 4),
-        "快充" to DuoStatusState(0.80f, isCharging = true, isFastCharging = true, wifiLevel = 3, cellularBars = 4),
+        "快充" to DuoStatusState(
+            0.80f,
+            isCharging = true,
+            isFastCharging = true,
+            wifiLevel = 3,
+            cellularBars = 4
+        ),
         "Wi-Fi" to DuoStatusState(0.64f, wifiLevel = 3, cellularBars = 3),
         "5G" to DuoStatusState(0.79f, wifiLevel = 0, cellularBars = 4, networkLabel = "5G"),
         "省电" to DuoStatusState(0.24f, isPowerSaving = true, wifiLevel = 2, cellularBars = 2),
@@ -436,7 +464,9 @@ private fun DuoDemo() {
 
                 LabeledSlider("电量", value = level) { level = it }
                 LabeledSlider("信号格", value = bars / 4f) { bars = (it * 4f).roundToInt() }
-                LabeledSlider("Wi-Fi 强度", value = wifiLevel / 3f) { wifiLevel = (it * 3f).roundToInt() }
+                LabeledSlider("Wi-Fi 强度", value = wifiLevel / 3f) {
+                    wifiLevel = (it * 3f).roundToInt()
+                }
 
                 ToggleRow("充电中", charging) { charging = it }
                 ToggleRow("快充", fastCharging) { fastCharging = it }
@@ -487,9 +517,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             ComposeDuoTheme {
-                Surface(modifier = Modifier
-                    .fillMaxSize()
-                    .systemBarsPadding()) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .systemBarsPadding()
+                ) {
                     DuoDemo()
                 }
             }
