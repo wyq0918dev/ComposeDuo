@@ -70,10 +70,6 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
- * TODO: 双卡信号、电量数字显示
- */
-
-/**
  * iPhone Duo 外屏「三合一」状态栏图标。
  *
  * 依据（联网核实）：
@@ -292,7 +288,7 @@ private fun DrawScope.drawDuoMark(
         val dotRadius = stroke / 2f
         val dotOrbit = radius
         for (i in 0 until 4) {
-            val a = Math.toRadians((90f + (i - 1.5f) * dotSpacing).toDouble())
+            val a = Math.toRadians((90f + (1.5f - i) * dotSpacing).toDouble())
             drawCircle(
                 color = if (i < bars) colors.foreground else colors.track,
                 radius = dotRadius,
@@ -550,7 +546,6 @@ private fun DuoDemo() {
                 DuoStatusMark(
                     state = live,
                     modifier = Modifier.align(Alignment.CenterHorizontally),
-//                    size = 88.dp,
                     colors = colors,
                 )
                 Spacer(Modifier.height(20.dp))
