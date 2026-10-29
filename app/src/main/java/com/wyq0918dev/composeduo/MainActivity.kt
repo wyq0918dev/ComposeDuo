@@ -38,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -90,6 +91,7 @@ data class DuoStatusState(
     val isPowerSaving: Boolean = false,
     val wifiLevel: Int = 3,           // 0=无, 1..3 强度
     val cellularBars: Int = 4,        // 0..4 信号格
+    val simBars: List<Int>? = null,   // 非空且 size >= 2 时启用双卡双排绘制
     val networkLabel: String? = null, // 无 Wi-Fi 时的制式，如 "5G"
 )
 
@@ -217,6 +219,7 @@ fun DuoStatusMark(
             pulse = pulse,
             wifiLevel = wifiLevel,
             bars = bars,
+            simBars = state.simBars,
             label = labelLayout,
             fromKind = fromKind,
             toKind = toKind,
@@ -234,6 +237,7 @@ private fun DrawScope.drawDuoMark(
     pulse: Float,
     wifiLevel: Int,
     bars: Int,
+    simBars: List<Int>?,
     label: TextLayoutResult?,
     fromKind: CenterKind,
     toKind: CenterKind,
@@ -279,19 +283,25 @@ private fun DrawScope.drawDuoMark(
         )
     }
 
-    // 底部缺口内的 4 个信号圆点：与圆环同轨道、同粗细，补全成完整圆环
-    val dotRadius = stroke / 2f
-    val dotOrbit = radius
-    for (i in 0 until 4) {
-        val a = Math.toRadians((90f + (i - 1.5f) * dotSpacing).toDouble())
-        drawCircle(
-            color = if (i < bars) colors.foreground else colors.track,
-            radius = dotRadius,
-            center = Offset(
-                center.x + dotOrbit * cos(a).toFloat(),
-                center.y + dotOrbit * sin(a).toFloat()
-            ),
-        )
+    // 信号区：双卡走双排矩形网格，单卡走弧形点阵
+    val dual = simBars?.takeIf { it.size >= 2 }
+    if (dual != null) {
+        drawSignalGrid(dual, center, radius, stroke, opening, colors)
+    } else {
+        // 底部缺口内的 4 个信号圆点：与圆环同轨道、同粗细，补全成完整圆环
+        val dotRadius = stroke / 2f
+        val dotOrbit = radius
+        for (i in 0 until 4) {
+            val a = Math.toRadians((90f + (i - 1.5f) * dotSpacing).toDouble())
+            drawCircle(
+                color = if (i < bars) colors.foreground else colors.track,
+                radius = dotRadius,
+                center = Offset(
+                    center.x + dotOrbit * cos(a).toFloat(),
+                    center.y + dotOrbit * sin(a).toFloat()
+                ),
+            )
+        }
     }
 
     // 环心内容：from 淡出、to 淡入，切换时平滑过渡
@@ -319,6 +329,37 @@ private fun DrawScope.drawCenterContent(
                 textLayoutResult = it,
                 topLeft = Offset(center.x - it.size.width / 2f, center.y - it.size.height / 2f),
                 alpha = alpha,
+            )
+        }
+    }
+}
+
+private fun DrawScope.drawSignalGrid(
+    simBars: List<Int>,
+    center: Offset,
+    radius: Float,
+    stroke: Float,
+    opening: Float,
+    colors: DuoStatusColors,
+) {
+    // 双卡：2 行 × 4 列矩形点阵，点直径 = 线宽，左右间距 = 上下间距，置于底部开口内
+    val dotRadius = stroke / 2f
+    val gap = stroke * 0.5f          // 点间留白（左右 = 上下）
+    val step = stroke + gap          // 相邻点中心距
+    val cols = 4
+    val rows = simBars.size
+    // 网格横向中心线对齐开口两端中心，再下移半格留白，视觉落在开口中部
+    val cy = radius * cos(x = Math.toRadians((opening / 2f).toDouble())).toFloat() + stroke * 0.8f
+    for (r in 0 until rows) {
+        for (c in 0 until cols) {
+            val lit = c < simBars[r].coerceIn(0, 4)
+            drawCircle(
+                color = if (lit) colors.foreground else colors.track,
+                radius = dotRadius,
+                center = Offset(
+                    center.x + (c - (cols - 1) / 2f) * step,
+                    center.y + cy + (r - (rows - 1) / 2f) * step,
+                ),
             )
         }
     }
@@ -428,6 +469,9 @@ private fun DuoDemo() {
     var powerSaving by remember { mutableStateOf(false) }
     var wifiLevel by remember { mutableStateOf(3) }
     var bars by remember { mutableStateOf(3) }
+    var dual by remember { mutableStateOf(false) }
+    var sim1Bars by remember { mutableIntStateOf(4) }
+    var sim2Bars by remember { mutableIntStateOf(2) }
 
     val live = DuoStatusState(
         batteryLevel = level,
@@ -436,6 +480,7 @@ private fun DuoDemo() {
         isPowerSaving = powerSaving,
         wifiLevel = wifiLevel,
         cellularBars = bars,
+        simBars = if (dual) listOf(sim1Bars, sim2Bars) else null,
         networkLabel = if (wifiLevel == 0) "5G" else null,
     )
 
@@ -452,6 +497,7 @@ private fun DuoDemo() {
         "5G" to DuoStatusState(0.79f, wifiLevel = 0, cellularBars = 4, networkLabel = "5G"),
         "省电" to DuoStatusState(0.24f, isPowerSaving = true, wifiLevel = 2, cellularBars = 2),
         "低电量" to DuoStatusState(0.12f, wifiLevel = 1, cellularBars = 1),
+        "双卡" to DuoStatusState(0.7f, wifiLevel = 3, cellularBars = 4, simBars = listOf(4, 2)),
     )
 
     Column(
@@ -510,7 +556,17 @@ private fun DuoDemo() {
                 Spacer(Modifier.height(20.dp))
 
                 LabeledSlider("电量", value = level) { level = it }
-                LabeledSlider("信号格", value = bars / 4f) { bars = (it * 4f).roundToInt() }
+                ToggleRow("双卡", dual) { dual = it }
+                if (dual) {
+                    LabeledSlider("卡1信号", value = sim1Bars / 4f) {
+                        sim1Bars = (it * 4f).roundToInt()
+                    }
+                    LabeledSlider("卡2信号", value = sim2Bars / 4f) {
+                        sim2Bars = (it * 4f).roundToInt()
+                    }
+                } else {
+                    LabeledSlider("信号格", value = bars / 4f) { bars = (it * 4f).roundToInt() }
+                }
                 LabeledSlider("Wi-Fi 强度", value = wifiLevel / 3f) {
                     wifiLevel = (it * 3f).roundToInt()
                 }
